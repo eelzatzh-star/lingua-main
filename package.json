@@ -1,0 +1,16 @@
+{
+  "name": "lingua-bridge-family",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lingua Bridge Family website with server-backed AI assistance, glossary search, persistent reviews, and consultation requests.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js && node --check public/script.js && node --check public/admin.js"
+  },
+  "engines": { "node": ">=20.11.0" },
+  "optionalDependencies": {
+    "nodemailer": "^7.0.3"
+  }
+}

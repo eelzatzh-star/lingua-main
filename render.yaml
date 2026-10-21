@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: lingua-bridge-family
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: OPENAI_MODEL
+        value: gpt-6-luna
+      - key: OPENAI_API_URL
+        value: https://api.openai.com/v1/responses

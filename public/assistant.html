@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="ИИ-помощник Lingua Bridge Family для вопросов о семье, общении родителей и подростков." />
+  <meta name="theme-color" content="#070b14" />
+  <title>Lingua Bridge Family — AI-помощник</title>
+  <link rel="stylesheet" href="styles.css" /><script defer src="script.js"></script>
+</head>
+<body>
+  <header class="nav"><a class="brand" href="index.html"><span class="brand__mark" aria-hidden="true"></span><span class="brand__text"><span class="brand__name">Lingua Bridge Family</span><span class="brand__tag">AI-помощник для общения</span></span></a><nav class="nav__links" aria-label="Основная навигация"><a class="nav__link" href="index.html">Главная</a><a class="nav__link" href="hub.html">Платформа</a><a class="nav__link is-active" href="assistant.html" aria-current="page">AI-помощник</a></nav></header>
+  <main class="container">
+    <section class="pagehead"><div><div class="pill">Поддержка в сложном разговоре</div><h1 class="pagehead__title">AI-помощник для родителей</h1><p class="pagehead__desc">Расскажите, что произошло, и получите варианты формулировок, уточняющие вопросы и практические шаги. Помощник работает через серверный API.</p></div><div class="pagehead__actions"><a class="btn btn--ghost" href="hub.html">К платформе</a><a class="btn btn--primary" href="index.html">На главную</a></div></section>
+    <div class="service-status" id="aiServiceStatus" data-state="loading" role="status">Проверяем подключение AI-помощника…</div>
+    <section class="ai">
+      <div class="ai__left"><div class="glass glass--tight"><div class="glass__top"><span class="dot dot--r"></span><span class="dot dot--y"></span><span class="dot dot--g"></span><div class="glass__title">Диалог с помощником</div></div>
+        <div class="chat chat--big" id="aiChat" aria-live="polite" aria-label="История диалога"><div class="bubble bubble--system">Здравствуйте! Опишите ситуацию — например, конфликт из-за телефона, стресс перед контрольной или трудности в разговоре. Я помогу рассмотреть её с разных сторон и подобрать спокойные фразы.</div></div>
+        <form class="composer" id="aiForm"><input id="aiInput" type="text" maxlength="4000" placeholder="Опишите ситуацию или задайте вопрос…" aria-label="Ваше сообщение" autocomplete="off" required /><button class="btn btn--primary btn--icon" id="aiSend" type="submit" title="Отправить сообщение" aria-label="Отправить сообщение">➤</button></form>
+        <div class="hintline">Не указывайте фамилии, адреса, телефоны и другие персональные данные. ИИ может ошибаться и не заменяет психолога, врача или экстренную помощь.</div>
+      </div></div>
+      <aside class="ai__right"><div class="stack">
+        <div class="card card--big"><div class="card__icon">🧩</div><div class="card__title">Что можно обсудить</div><div class="card__text">Границы, конфликт, школьный стресс, цифровые привычки, эмоциональная поддержка, доверие и способы начать непростой разговор.</div><div class="chips"><button class="chip prompt-chip" type="button" data-prompt="Подросток постоянно сидит в телефоне. Как спокойно обсудить ограничения?">Гаджеты</button><button class="chip prompt-chip" type="button" data-prompt="Ребёнок пришёл домой раздражённым и отвечает грубо. Как начать разговор?">Грубость</button><button class="chip prompt-chip" type="button" data-prompt="Подросток переживает из-за плохой оценки. Как поддержать его и не давить?">Учёба</button><button class="chip prompt-chip" type="button" data-prompt="Как поговорить о личных границах и доверии?">Границы</button></div></div>
+        <div class="card card--big"><div class="card__icon">🛡️</div><div class="card__title">Поддержка без обвинений</div><div class="card__text">Начинайте с наблюдения и своего чувства, затем задавайте открытый вопрос.</div><div class="example"><div class="example__bad">❌ «Ты всегда ведёшь себя ужасно!»</div><div class="example__good">✅ «Я расстроен(а) тем, как мы поговорили. Помоги мне понять, что ты сейчас чувствуешь».</div></div></div>
+        <div class="card card--big"><div class="card__icon">🌉</div><div class="card__title">Хотите изучить тему глубже?</div><div class="card__text">В словаре есть объяснения современных выражений, а в разделе советов — сценарии для разных ситуаций.</div><a class="btn btn--ghost" href="hub.html">Открыть словарь и советы</a></div>
+      </div></aside>
+    </section>
+    <footer class="footer"><div class="footer__left"><div class="footer__brand">Lingua Bridge Family</div><div class="footer__muted">© 2026 · Lingua Bridge Family</div></div><div class="footer__right"><a class="footer__link" href="hub.html">Платформа</a><a class="footer__link" href="index.html">Главная</a></div></footer>
+  </main>
+</body>
+</html>

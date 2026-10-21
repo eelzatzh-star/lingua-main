@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Словарь поколений, советы по общению в семье и заявки на психологическую поддержку." />
+  <meta name="theme-color" content="#070b14" />
+  <title>Lingua Bridge Family — Платформа</title>
+  <link rel="stylesheet" href="styles.css" /><script defer src="script.js"></script>
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="index.html"><span class="brand__mark" aria-hidden="true"></span><span class="brand__text"><span class="brand__name">Lingua Bridge Family</span><span class="brand__tag">Словарь · Советы · Поддержка</span></span></a>
+    <nav class="nav__links" aria-label="Основная навигация"><a class="nav__link" href="index.html">Главная</a><a class="nav__link is-active" href="hub.html" aria-current="page">Платформа</a><a class="nav__link" href="assistant.html">AI-помощник</a></nav>
+  </header>
+  <main class="container">
+    <section class="pagehead"><div><div class="pill">Материалы для общения</div><h1 class="pagehead__title">Платформа взаимопонимания</h1><p class="pagehead__desc">Изучайте современные выражения, ищите рекомендации и оставляйте заявку на консультационную поддержку.</p></div><div class="pagehead__actions"><a class="btn btn--primary" href="assistant.html">Открыть AI-помощник</a><a class="btn btn--ghost" href="index.html">На главную</a></div></section>
+    <section class="dashboard">
+      <aside class="sidebar">
+        <div class="sidebar__title">Разделы</div>
+        <button type="button" class="tab is-active" data-tab="dict">📘 Словарь</button>
+        <button type="button" class="tab" data-tab="tips">✨ Советы</button>
+        <button type="button" class="tab" data-tab="psych">🧠 Психологи</button>
+        <div class="sidebar__divider"></div>
+        <div class="sidebar__title">Быстрый поиск</div>
+        <div class="search"><input id="search" type="search" placeholder="Например: кринж, тревога, гаджеты…" aria-label="Поиск в выбранном разделе" /><div class="search__hint">Ищет по названиям, объяснениям, ключевым словам и советам.</div><div class="search__status" id="searchStatus" aria-live="polite"></div></div>
+      </aside>
+      <section class="panel">
+        <div class="panel__section is-show" id="tab-dict" data-section="dict"><div class="panel__head"><h2 class="panel__title" id="dictionary">Словарь поколений</h2><p class="panel__desc">Значение выражения зависит от ситуации и тона. У каждого термина есть пояснение и пример уважительной реакции.</p></div><div class="cardslist" id="cards-dict"></div><p class="empty-state" id="empty-dict" hidden>По вашему запросу ничего не найдено. Попробуйте другое слово.</p></div>
+
+        <div class="panel__section" id="tab-tips" data-section="tips"><div class="panel__head"><h2 class="panel__title" id="tips">Советы для диалога</h2><p class="panel__desc">Практические сценарии для трудных разговоров — без обвинений и попыток обесценить чувства собеседника.</p></div><div class="grid2" id="tips-list">
+          <article class="tipcard" data-text="конфликт крики спор ссора пауза злость"><div class="tipcard__title">Когда разговор накаляется</div><div class="tipcard__text">«Я хочу понять тебя, но сейчас мы оба раздражены. Давай сделаем паузу и вернёмся к разговору через 10 минут».</div><div class="tipcard__meta">Техника: пауза и договорённость о возвращении к теме</div></article>
+          <article class="tipcard" data-text="оценки школа учёба домашнее задание контрольная провал"><div class="tipcard__title">Про школу и оценки</div><div class="tipcard__text">«Я вижу, что результат тебя расстроил. Хочешь сначала рассказать, что случилось, или вместе составим план?»</div><div class="tipcard__meta">Техника: сначала эмоции, потом решение</div></article>
+          <article class="tipcard" data-text="гаджеты телефон компьютер игры соцсети экран зависимость"><div class="tipcard__title">Про телефон и игры</div><div class="tipcard__text">«Помоги мне понять, что тебе нравится в этом занятии. Потом обсудим время так, чтобы остались и отдых, и сон, и обязанности».</div><div class="tipcard__meta">Техника: интерес и совместные границы</div></article>
+          <article class="tipcard" data-text="усталость эмоции поддержка помощь тишина пространство"><div class="tipcard__title">Когда подросток закрывается</div><div class="tipcard__text">«Я не буду настаивать на разговоре. Тебе нужно побыть одному или помочь чем-то конкретным?»</div><div class="tipcard__meta">Техника: выбор вместо давления</div></article>
+          <article class="tipcard" data-text="грубость агрессия раздражение злится оскорбление"><div class="tipcard__title">Когда слышите грубость</div><div class="tipcard__text">«Я хочу услышать, что тебя злит. При этом давай без оскорблений — так нам будет проще разобраться».</div><div class="tipcard__meta">Техника: признать эмоцию и обозначить границу</div></article>
+          <article class="tipcard" data-text="доверие секреты приватность личные границы контроль"><div class="tipcard__title">Про личные границы</div><div class="tipcard__text">«Какие вещи ты хотел(а) бы решать самостоятельно? Давай определим, где тебе нужна свобода, а где важна безопасность».</div><div class="tipcard__meta">Техника: ясные, взаимные правила</div></article>
+          <article class="tipcard" data-text="друзья отношения влюблённость любовь краш"><div class="tipcard__title">Когда речь о друзьях или отношениях</div><div class="tipcard__text">«Я не хочу делать выводы вместо тебя. Расскажешь, что тебе нравится в этих отношениях и что тебя беспокоит?»</div><div class="tipcard__meta">Техника: любопытство без допроса</div></article>
+          <article class="tipcard" data-text="ошибка ложь доверие наказание признание"><div class="tipcard__title">Когда подросток признаётся в ошибке</div><div class="tipcard__text">«Спасибо, что рассказал(а). Давай сначала разберёмся, что произошло, а потом решим, как исправить ситуацию».</div><div class="tipcard__meta">Техника: поддержать честность и ответственность</div></article>
+        </div><p class="empty-state" id="empty-tips" hidden>Советы по вашему запросу не найдены.</p></div>
+
+        <div class="panel__section" id="tab-psych" data-section="psych"><div class="panel__head"><h2 class="panel__title" id="psych">Психологическая поддержка</h2><p class="panel__desc">Оставьте заявку с удобным способом связи и опишите, какая помощь нужна. Заявка сохраняется в системе; координатор сможет обработать её через административный раздел.</p></div>
+          <div class="grid2" id="psych-list">
+            <article class="pro" data-text="семейный психолог родители подростки конфликт тревожность общение границы"><div class="pro__top"><div class="avatar" aria-hidden="true">С</div><div><div class="pro__name">Семейная консультация</div><div class="pro__role">Детско-родительские отношения</div></div><span class="badge badge--soft">онлайн-заявка</span></div><div class="pro__text">Для ситуаций, в которых семье трудно договориться, восстановить доверие или обсудить личные границы. После заявки важно подтвердить доступность и квалификацию конкретного специалиста.</div><div class="pro__btns"><button class="btn btn--mini" type="button" data-contact-action="appointment" data-specialty="Семейная консультация">Оставить заявку</button><button class="btn btn--mini btn--ghost" type="button" data-contact-action="details" data-specialty="Семейная консультация">Темы консультации</button></div></article>
+            <article class="pro" data-text="психолог-консультант тревожность стресс эмоции подросток родитель выгорание"><div class="pro__top"><div class="avatar" aria-hidden="true">П</div><div><div class="pro__name">Индивидуальная поддержка</div><div class="pro__role">Стресс, тревожность и эмоции</div></div><span class="badge badge--soft">онлайн-заявка</span></div><div class="pro__text">Для тех, кому нужно обсудить переживания, сложный жизненный период или способы справляться со стрессом. Заявка не является подтверждённой записью к специалисту.</div><div class="pro__btns"><button class="btn btn--mini" type="button" data-contact-action="message" data-specialty="Индивидуальная поддержка">Написать координатору</button><button class="btn btn--mini btn--ghost" type="button" data-contact-action="details" data-specialty="Индивидуальная поддержка">Темы поддержки</button></div></article>
+          </div>
+          <div class="small-note" style="margin-top:12px">Lingua Bridge Family не указывает непроверенные имена и квалификации. До подтверждения специалиста координатор должен сообщить его данные, условия, стоимость и доступное время.</div>
+          <p class="empty-state" id="empty-psych" hidden>По вашему запросу ничего не найдено.</p>
+        </div>
+
+        <div class="ctaBottom"><div class="ctaBottom__left"><div class="ctaBottom__title">Нужна помощь подобрать слова?</div><div class="ctaBottom__text">Опишите ситуацию ИИ-помощнику — он предложит несколько вариантов фраз и вопросов для спокойного разговора.</div></div><a class="btn btn--primary" href="assistant.html">Открыть AI-помощник</a></div>
+      </section>
+    </section>
+    <footer class="footer"><div class="footer__left"><div class="footer__brand">Lingua Bridge Family</div><div class="footer__muted">© 2026 · Lingua Bridge Family</div></div><div class="footer__right"><a class="footer__link" href="index.html">Главная</a><a class="footer__link" href="assistant.html">AI-помощник</a><a class="footer__link" href="admin.html">Вход для администратора</a></div></footer>
+  </main>
+  <div class="modal-overlay" id="psychModal" aria-hidden="true"><section class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><h2 class="modal-title" id="modalTitle">Заявка на консультацию</h2><p class="modal-desc" id="modalDesc">Укажите способ связи. Не отправляйте подробности, которые не хотите передавать координатору.</p><form id="psychForm"><input type="hidden" id="psychSpecialty" name="specialty" /><input type="hidden" id="psychPurpose" name="purpose" value="appointment" /><div class="form-group"><label for="clientName">Ваше имя</label><input type="text" id="clientName" name="name" maxlength="60" autocomplete="name" placeholder="Как к вам обращаться" required /></div><div class="form-group"><label for="clientContact">Телефон, e-mail или Telegram</label><input type="text" id="clientContact" name="contact" maxlength="160" autocomplete="email" placeholder="Контакт для ответа" required /></div><div class="form-group"><label for="clientNote">Что хотелось бы обсудить</label><textarea id="clientNote" name="note" rows="4" maxlength="1600" placeholder="Кратко опишите тему обращения (необязательно)"></textarea></div><div class="form-group"><label class="consent-line"><input type="checkbox" id="psychConsent" required /><span>Я согласен(на) на обработку указанных контактов для ответа на заявку и понимаю, что отправка формы не подтверждает запись к психологу.</span></label></div><input type="text" id="psychWebsite" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-10000px;width:1px;height:1px" /><div class="modal-actions"><button class="btn btn--ghost" type="button" id="modalClose">Закрыть</button><button class="btn btn--primary" type="submit" id="modalSubmit">Отправить заявку</button></div><p class="form-status" id="psychStatus" aria-live="polite"></p></form></section></div>
+</body>
+</html>
