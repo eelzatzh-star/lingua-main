@@ -26,7 +26,9 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.GEMINI_API_KEY || 'linguabridge-secret-key-2026';
+
 const rateBuckets = new Map();
 const storeQueues = new Map();
 
@@ -121,35 +123,46 @@ async function mutateStore(filename, mutator) {
   finally { if (storeQueues.get(filename) === task) storeQueues.delete(filename); }
 }
 
-function adminAuthorized(req) {
-  const expected = process.env.ADMIN_TOKEN || '';
-  if (!expected) return { ok: false, status: 503, error: 'Административный доступ не настроен. Задайте ADMIN_TOKEN в .env.' };
-  const auth = String(req.headers.authorization || '');
-  const supplied = auth.match(/^Bearer\s+(.+)$/i)?.[1] || '';
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  const valid = a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
-  return valid ? { ok: true } : { ok: false, status: 401, error: 'Неверный административный токен.' };
+// ХЕШИРОВАНИЕ ПАРОЛЕЙ И ТОКЕНЫ СЕССИЙ
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
 }
 
-const smtpReady = () => Boolean(nodemailer && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.CONTACT_NOTIFY_EMAIL && process.env.MAIL_FROM);
+function verifyPassword(password, storedHash) {
+  const [salt, key] = String(storedHash || '').split(':');
+  if (!salt || !key) return false;
+  const hashBuffer = crypto.scryptSync(password, salt, 64);
+  const keyBuffer = Buffer.from(key, 'hex');
+  return hashBuffer.length === keyBuffer.length && crypto.timingSafeEqual(hashBuffer, keyBuffer);
+}
 
-async function notifyAdmin(subject, text) {
-  if (!smtpReady()) return false;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: String(process.env.SMTP_SECURE || (port === 465)).toLowerCase() === 'true',
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
-  });
+function createAuthToken(user) {
+  const payload = Buffer.from(JSON.stringify({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role || 'parent',
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 30 // 30 дней
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function verifyAuthToken(req) {
+  const auth = String(req.headers.authorization || '');
+  const token = auth.match(/^Bearer\s+(.+)$/i)?.[1] || '';
+  if (!token || !token.includes('.')) return null;
+  const [payload, signature] = token.split('.');
+  const expectedSig = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
+  if (signature !== expectedSig) return null;
   try {
-    await transporter.sendMail({ from: process.env.MAIL_FROM, to: process.env.CONTACT_NOTIFY_EMAIL, subject, text });
-    return true;
-  } finally { transporter.close(); }
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data.exp || data.exp < Date.now()) return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 async function handleAPI(req, res, url) {
@@ -157,60 +170,108 @@ async function handleAPI(req, res, url) {
   const method = req.method || 'GET';
 
   if (pathname === '/api/health' && method === 'GET') {
-    return sendJSON(res, 200, {
-      ok: true,
-      aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
-      emailNotificationsConfigured: smtpReady()
-    });
+    return sendJSON(res, 200, { ok: true, aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
   }
 
+  // РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЯ В БАЗУ users.json
+  if (pathname === '/api/auth/register' && method === 'POST') {
+    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 15, message: 'Слишком много попыток регистрации. Попробуйте позже.' }, pathname)) return;
+    const body = await readBody(req);
+    const name = trimmed(body.name, 60);
+    const email = trimmed(body.email, 120).toLowerCase();
+    const password = String(body.password || '');
+    const role = ['parent', 'teen'].includes(body.role) ? body.role : 'parent';
+
+    if (name.length < 2) return sendJSON(res, 400, { error: 'Имя должно содержать минимум 2 символа.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return sendJSON(res, 400, { error: 'Введите корректный E-mail.' });
+    if (password.length < 6) return sendJSON(res, 400, { error: 'Пароль должен быть не менее 6 символов.' });
+
+    const result = await mutateStore('users.json', (users) => {
+      if (users.some((u) => u.email === email)) {
+        return { skipSave: true, value: { error: 'Пользователь с таким E-mail уже зарегистрирован.' } };
+      }
+      const newUser = {
+        id: crypto.randomUUID(),
+        name,
+        email,
+        role,
+        passwordHash: hashPassword(password),
+        createdAt: nowISO()
+      };
+      users.push(newUser);
+      return { value: { user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role } } };
+    });
+
+    if (result.error) return sendJSON(res, 409, { error: result.error });
+    const token = createAuthToken(result.user);
+    return sendJSON(res, 201, { ok: true, token, user: result.user });
+  }
+
+  // ВХОД В АККАУНТ
+  if (pathname === '/api/auth/login' && method === 'POST') {
+    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 20, message: 'Слишком много попыток входа. Подождите немного.' }, pathname)) return;
+    const body = await readBody(req);
+    const email = trimmed(body.email, 120).toLowerCase();
+    const password = String(body.password || '');
+
+    const users = await readStore('users.json');
+    const found = users.find((u) => u.email === email);
+    if (!found || !verifyPassword(password, found.passwordHash)) {
+      return sendJSON(res, 401, { error: 'Неверный E-mail или пароль.' });
+    }
+
+    const safeUser = { id: found.id, name: found.name, email: found.email, role: found.role || 'parent' };
+    const token = createAuthToken(safeUser);
+    return sendJSON(res, 200, { ok: true, token, user: safeUser });
+  }
+
+  // ПРОВЕРКА ТЕКУЩЕЙ СЕССИИ АККАУНТА
+  if (pathname === '/api/auth/me' && method === 'GET') {
+    const tokenData = verifyAuthToken(req);
+    if (!tokenData) return sendJSON(res, 401, { error: 'Не авторизован' });
+    const users = await readStore('users.json');
+    const found = users.find((u) => u.id === tokenData.id);
+    if (!found) {
+      return sendJSON(res, 200, { user: { id: tokenData.id, name: tokenData.name, email: tokenData.email, role: tokenData.role } });
+    }
+    return sendJSON(res, 200, { user: { id: found.id, name: found.name, email: found.email, role: found.role || 'parent' } });
+  }
+
+  // ОТЗЫВЫ
   if (pathname === '/api/reviews' && method === 'GET') {
     const reviews = await readStore('reviews.json');
-    const visible = reviews.filter((review) => !review.hidden).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    return sendJSON(res, 200, { reviews: visible.map(({ id, name, rating, text, createdAt }) => ({ id, name, rating, text, createdAt })) });
+    const visible = reviews.filter((r) => !r.hidden).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return sendJSON(res, 200, { reviews: visible });
   }
 
   if (pathname === '/api/reviews' && method === 'POST') {
-    if (!setRateLimit(req, res, { windowMs: 60 * 60 * 1000, max: 8, message: 'Слишком много попыток. Попробуйте позже.' }, pathname)) return;
     const body = await readBody(req);
-    if (trimmed(body.website, 200)) return sendJSON(res, 400, { error: 'Не удалось принять отзыв.' });
-    const name = trimmed(body.name, 50);
+    const name = trimmed(body.name, 60);
+    const email = trimmed(body.email, 100);
     const text = trimmed(body.text, 1200);
-    const rating = Number(body.rating);
-    if (name.length < 2) return sendJSON(res, 400, { error: 'Введите имя или роль (не менее 2 символов).' });
-    if (text.length < 8) return sendJSON(res, 400, { error: 'Отзыв должен содержать не менее 8 символов.' });
-    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return sendJSON(res, 400, { error: 'Выберите оценку от 1 до 5.' });
-    const review = { id: crypto.randomUUID(), name, text, rating, createdAt: nowISO(), hidden: false };
+    const rating = Number(body.rating) || 5;
+    if (name.length < 2 || text.length < 5) return sendJSON(res, 400, { error: 'Заполните имя и текст отзыва.' });
+    const review = { id: crypto.randomUUID(), name, email, text, rating, createdAt: nowISO(), hidden: false };
     await mutateStore('reviews.json', (reviews) => { reviews.push(review); return { value: null }; });
-    return sendJSON(res, 201, { ok: true, review: { id: review.id, name, text, rating, createdAt: review.createdAt } });
+    return sendJSON(res, 201, { ok: true, review });
   }
 
+  // ЗАЯВКИ К ПСИХОЛОГУ
   if (pathname === '/api/psych-requests' && method === 'POST') {
-    if (!setRateLimit(req, res, { windowMs: 60 * 60 * 1000, max: 5, message: 'Слишком много заявок с этого подключения. Попробуйте позже.' }, pathname)) return;
     const body = await readBody(req);
-    if (trimmed(body.website, 200)) return sendJSON(res, 400, { error: 'Не удалось принять заявку.' });
     const name = trimmed(body.name, 60);
     const contact = trimmed(body.contact, 160);
     const note = trimmed(body.note, 1600);
     const specialty = trimmed(body.specialty, 100) || 'Психологическая поддержка';
-    const purpose = ['appointment', 'message', 'details'].includes(body.purpose) ? body.purpose : 'appointment';
-    if (name.length < 2) return sendJSON(res, 400, { error: 'Укажите имя (не менее 2 символов).' });
-    if (contact.length < 4) return sendJSON(res, 400, { error: 'Укажите телефон, e-mail или Telegram для ответа.' });
+    const purpose = ['appointment', 'message'].includes(body.purpose) ? body.purpose : 'appointment';
+    if (name.length < 2 || contact.length < 4) return sendJSON(res, 400, { error: 'Укажите имя и контакт для связи.' });
     const requestItem = { id: crypto.randomUUID(), name, contact, note, specialty, purpose, createdAt: nowISO(), status: 'new' };
     await mutateStore('requests.json', (requests) => { requests.push(requestItem); return { value: null }; });
-    let notified = false;
-    try {
-      const kind = purpose === 'message' ? 'Запрос на обратную связь' : 'Заявка на консультационную поддержку';
-      notified = await notifyAdmin(`Lingua Bridge Family: ${kind}`, [kind, `Имя: ${name}`, `Контакт: ${contact}`, `Направление: ${specialty}`, `Время: ${requestItem.createdAt}`, `Сообщение: ${note || '(не указано)'}`, `ID заявки: ${requestItem.id}`].join('\n'));
-    } catch (mailError) { console.error('Request saved, but email notification failed:', mailError.message); }
-    return sendJSON(res, 201, {
-      ok: true, notified,
-      message: 'Заявка успешно сохранена! Специалист свяжется с вами по указанному контакту.'
-    });
+    return sendJSON(res, 201, { ok: true, message: 'Заявка успешно сохранена в базе! Специалист свяжется с вами.' });
   }
 
+  // ИИ-ЧАТ С АВТОМАТИЧЕСКИМ ПЕРЕКЛЮЧЕНИЕМ МОДЕЛЕЙ ПРИ ПЕРЕГРУЗКЕ 503
   if (pathname === '/api/chat' && method === 'POST') {
-    if (!setRateLimit(req, res, { windowMs: 10 * 60 * 1000, max: 30, message: 'Слишком много сообщений за короткое время. Попробуйте немного позже.' }, pathname)) return;
     const body = await readBody(req);
     const message = trimmed(body.message, 4000);
     const mode = trimmed(body.mode, 100) || 'slang';
@@ -224,16 +285,13 @@ async function handleAPI(req, res, url) {
     const systemInstruction = [
       'Ты — живой, умный семейный ИИ-медиатор и переводчик молодёжного сленга платформы LinguaBridge Family («Мост поколений»).',
       'Твоя задача — помогать родителям и подросткам понимать друг друга.',
-      'Если пользователь спрашивает значение сленгового слова или фразы (например, «пивозавр», «скуф», «имба», «нормис», «вайб» и т.д.):',
-      '1) Сначала чётко и с добрым юмором объясни точное значение этого слова в молодёжной интернет-культуре и откуда оно пошло.',
-      '2) Объясни, несёт ли оно обидный смысл или это просто шутка/мем.',
-      '3) Приведи 2-3 готовые фразы, как родителю можно отреагировать спокойно или с самоиронией, чтобы укрепить контакт с ребёнком.',
-      'Если вопрос касается семейного конфликта или психологии — дай тёплый, практичный разбор ситуации и конкретные фразы для диалога без нотаций.',
-      `Текущий режим консультации: ${mode}. Отвечай на русском языке, живо, конкретно по сути вопроса пользователя, без шаблонных отписок.`
+      'Если спрашивают про сленг (пивозавр, скуф, имба, кринж и т.д.): объясни смысл, обидно ли это, и дай 2-3 готовые фразы для ответа с добрым юмором.',
+      'Если вопрос о семейной психологии — дай тёплый практический совет и готовые фразы для диалога.',
+      `Текущий режим: ${mode}. Отвечай на русском языке, живо, дружелюбно и по делу.`
     ].join('\n');
 
     const history = Array.isArray(body.history)
-      ? body.history.slice(-10).filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
+      ? body.history.slice(-8).filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
       : [];
 
     const contents = history.map((item) => ({
@@ -245,42 +303,44 @@ async function handleAPI(req, res, url) {
       contents.push({ role: 'user', parts: [{ text: message }] });
     }
 
-    try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
-      const providerResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 900 }
-        }),
-        signal: AbortSignal.timeout(45000)
-      });
+    // Список резервных моделей на случай перегрузки 503 одной из них
+    const modelsToTry = Array.from(new Set([
+      GEMINI_MODEL,
+      'gemini-3.8-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash'
+    ]));
 
-      const payload = await providerResponse.json().catch(() => ({}));
-      if (!providerResponse.ok) {
-        console.error('Gemini API error:', providerResponse.status, JSON.stringify(payload));
-        return sendJSON(res, 502, {
-          error: `Ошибка API Gemini (${providerResponse.status}): ${payload?.error?.message || 'проверьте правильность ключа GEMINI_API_KEY'}`
+    let lastError = 'Сервер ИИ временно перегружен.';
+    for (const modelName of modelsToTry) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+        const providerResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents,
+            generationConfig: { temperature: 0.7, maxOutputTokens: 900 }
+          }),
+          signal: AbortSignal.timeout(35000)
         });
-      }
 
-      const reply = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('\n').trim() || '';
-      if (!reply) {
-        return sendJSON(res, 502, { error: 'ИИ вернул пустой ответ. Попробуйте переформулировать вопрос.' });
+        const payload = await providerResponse.json().catch(() => ({}));
+        if (providerResponse.ok) {
+          const reply = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('\n').trim() || '';
+          if (reply) return sendJSON(res, 200, { reply, modelUsed: modelName });
+        } else {
+          lastError = `Ошибка API (${providerResponse.status}): ${payload?.error?.message || 'попробуйте ещё раз'}`;
+          // Если ошибка не 503 и не 404 — прекращаем перебор
+          if (providerResponse.status !== 503 && providerResponse.status !== 404 && providerResponse.status !== 429) break;
+        }
+      } catch (err) {
+        lastError = err.message;
       }
-      return sendJSON(res, 200, { reply });
-    } catch (error) {
-      console.error('Gemini connection failed:', error);
-      return sendJSON(res, 502, { error: 'Не удалось связаться с сервером Google Gemini. Попробуйте ещё раз.' });
     }
-  }
 
-  if (pathname === '/api/admin/data' && method === 'GET') {
-    const auth = adminAuthorized(req); if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
-    const [requests, reviews] = await Promise.all([readStore('requests.json'), readStore('reviews.json')]);
-    return sendJSON(res, 200, { requests: requests.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), reviews: reviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+    return sendJSON(res, 502, { error: lastError });
   }
 
   return sendJSON(res, 404, { error: 'API-метод не найден.' });
@@ -333,11 +393,11 @@ const server = http.createServer(async (req, res) => {
 
 async function start() {
   await fs.mkdir(DATA_DIR, { recursive: true });
+  await ensureFile('users.json', []);
   await ensureFile('reviews.json', []);
   await ensureFile('requests.json', []);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Lingua Bridge Family is running at http://localhost:${PORT}`);
-    if (!process.env.GEMINI_API_KEY) console.warn('GEMINI_API_KEY is not set.');
   });
 }
 
