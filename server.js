@@ -123,7 +123,19 @@ async function mutateStore(filename, mutator) {
   finally { if (storeQueues.get(filename) === task) storeQueues.delete(filename); }
 }
 
-// ХЕШИРОВАНИЕ ПАРОЛЕЙ И ТОКЕНЫ СЕССИЙ
+// ПРОВЕРКА ПАРОЛЯ АДМИНА
+function adminAuthorized(req) {
+  const expected = process.env.ADMIN_TOKEN || '';
+  if (!expected) return { ok: false, status: 503, error: 'Административный доступ не настроен. Задайте ADMIN_TOKEN в .env.' };
+  const auth = String(req.headers.authorization || '');
+  const supplied = auth.match(/^Bearer\s+(.+)$/i)?.[1] || '';
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  const valid = a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+  return valid ? { ok: true } : { ok: false, status: 401, error: 'Неверный административный токен.' };
+}
+
+// ХЕШИРОВАНИЕ И ТОКЕНЫ СЕССИЙ (Для пользователей)
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
@@ -143,7 +155,7 @@ function createAuthToken(user) {
     name: user.name,
     email: user.email,
     role: user.role || 'parent',
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 30 // 30 дней
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 30
   })).toString('base64url');
   const signature = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
   return `${payload}.${signature}`;
@@ -169,75 +181,48 @@ async function handleAPI(req, res, url) {
   const pathname = url.pathname;
   const method = req.method || 'GET';
 
-  if (pathname === '/api/health' && method === 'GET') {
-    return sendJSON(res, 200, { ok: true, aiConfigured: Boolean(process.env.GEMINI_API_KEY) });
-  }
-
-  // РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЯ В БАЗУ users.json
+  // РЕГИСТРАЦИЯ И ВХОД
   if (pathname === '/api/auth/register' && method === 'POST') {
-    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 15, message: 'Слишком много попыток регистрации. Попробуйте позже.' }, pathname)) return;
+    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 15, message: 'Слишком много попыток.' }, pathname)) return;
     const body = await readBody(req);
     const name = trimmed(body.name, 60);
     const email = trimmed(body.email, 120).toLowerCase();
     const password = String(body.password || '');
     const role = ['parent', 'teen'].includes(body.role) ? body.role : 'parent';
-
     if (name.length < 2) return sendJSON(res, 400, { error: 'Имя должно содержать минимум 2 символа.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return sendJSON(res, 400, { error: 'Введите корректный E-mail.' });
     if (password.length < 6) return sendJSON(res, 400, { error: 'Пароль должен быть не менее 6 символов.' });
 
     const result = await mutateStore('users.json', (users) => {
-      if (users.some((u) => u.email === email)) {
-        return { skipSave: true, value: { error: 'Пользователь с таким E-mail уже зарегистрирован.' } };
-      }
-      const newUser = {
-        id: crypto.randomUUID(),
-        name,
-        email,
-        role,
-        passwordHash: hashPassword(password),
-        createdAt: nowISO()
-      };
+      if (users.some((u) => u.email === email)) return { skipSave: true, value: { error: 'Этот E-mail уже занят.' } };
+      const newUser = { id: crypto.randomUUID(), name, email, role, passwordHash: hashPassword(password), createdAt: nowISO() };
       users.push(newUser);
       return { value: { user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role } } };
     });
-
     if (result.error) return sendJSON(res, 409, { error: result.error });
-    const token = createAuthToken(result.user);
-    return sendJSON(res, 201, { ok: true, token, user: result.user });
+    return sendJSON(res, 201, { ok: true, token: createAuthToken(result.user), user: result.user });
   }
 
-  // ВХОД В АККАУНТ
   if (pathname === '/api/auth/login' && method === 'POST') {
-    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 20, message: 'Слишком много попыток входа. Подождите немного.' }, pathname)) return;
+    if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 20, message: 'Подождите немного.' }, pathname)) return;
     const body = await readBody(req);
     const email = trimmed(body.email, 120).toLowerCase();
-    const password = String(body.password || '');
-
     const users = await readStore('users.json');
     const found = users.find((u) => u.email === email);
-    if (!found || !verifyPassword(password, found.passwordHash)) {
-      return sendJSON(res, 401, { error: 'Неверный E-mail или пароль.' });
-    }
-
+    if (!found || !verifyPassword(String(body.password || ''), found.passwordHash)) return sendJSON(res, 401, { error: 'Неверный E-mail или пароль.' });
     const safeUser = { id: found.id, name: found.name, email: found.email, role: found.role || 'parent' };
-    const token = createAuthToken(safeUser);
-    return sendJSON(res, 200, { ok: true, token, user: safeUser });
+    return sendJSON(res, 200, { ok: true, token: createAuthToken(safeUser), user: safeUser });
   }
 
-  // ПРОВЕРКА ТЕКУЩЕЙ СЕССИИ АККАУНТА
   if (pathname === '/api/auth/me' && method === 'GET') {
     const tokenData = verifyAuthToken(req);
     if (!tokenData) return sendJSON(res, 401, { error: 'Не авторизован' });
     const users = await readStore('users.json');
     const found = users.find((u) => u.id === tokenData.id);
-    if (!found) {
-      return sendJSON(res, 200, { user: { id: tokenData.id, name: tokenData.name, email: tokenData.email, role: tokenData.role } });
-    }
-    return sendJSON(res, 200, { user: { id: found.id, name: found.name, email: found.email, role: found.role || 'parent' } });
+    return found ? sendJSON(res, 200, { user: { id: found.id, name: found.name, email: found.email, role: found.role } }) : sendJSON(res, 401, { error: 'Пользователь не найден' });
   }
 
-  // ОТЗЫВЫ
+  // ОТЗЫВЫ И ЗАЯВКИ ПУБЛИЧНЫЕ
   if (pathname === '/api/reviews' && method === 'GET') {
     const reviews = await readStore('reviews.json');
     const visible = reviews.filter((r) => !r.hidden).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -246,101 +231,84 @@ async function handleAPI(req, res, url) {
 
   if (pathname === '/api/reviews' && method === 'POST') {
     const body = await readBody(req);
-    const name = trimmed(body.name, 60);
-    const email = trimmed(body.email, 100);
-    const text = trimmed(body.text, 1200);
-    const rating = Number(body.rating) || 5;
-    if (name.length < 2 || text.length < 5) return sendJSON(res, 400, { error: 'Заполните имя и текст отзыва.' });
-    const review = { id: crypto.randomUUID(), name, email, text, rating, createdAt: nowISO(), hidden: false };
+    const review = { id: crypto.randomUUID(), name: trimmed(body.name, 60), email: trimmed(body.email, 100), text: trimmed(body.text, 1200), rating: Number(body.rating) || 5, createdAt: nowISO(), hidden: false };
+    if (review.name.length < 2 || review.text.length < 5) return sendJSON(res, 400, { error: 'Заполните поля' });
     await mutateStore('reviews.json', (reviews) => { reviews.push(review); return { value: null }; });
     return sendJSON(res, 201, { ok: true, review });
   }
 
-  // ЗАЯВКИ К ПСИХОЛОГУ
   if (pathname === '/api/psych-requests' && method === 'POST') {
     const body = await readBody(req);
-    const name = trimmed(body.name, 60);
-    const contact = trimmed(body.contact, 160);
-    const note = trimmed(body.note, 1600);
-    const specialty = trimmed(body.specialty, 100) || 'Психологическая поддержка';
-    const purpose = ['appointment', 'message'].includes(body.purpose) ? body.purpose : 'appointment';
-    if (name.length < 2 || contact.length < 4) return sendJSON(res, 400, { error: 'Укажите имя и контакт для связи.' });
-    const requestItem = { id: crypto.randomUUID(), name, contact, note, specialty, purpose, createdAt: nowISO(), status: 'new' };
-    await mutateStore('requests.json', (requests) => { requests.push(requestItem); return { value: null }; });
-    return sendJSON(res, 201, { ok: true, message: 'Заявка успешно сохранена в базе! Специалист свяжется с вами.' });
+    const reqItem = { id: crypto.randomUUID(), name: trimmed(body.name, 60), contact: trimmed(body.contact, 160), note: trimmed(body.note, 1600), specialty: trimmed(body.specialty, 100), purpose: body.purpose || 'appointment', createdAt: nowISO(), status: 'new' };
+    if (reqItem.name.length < 2 || reqItem.contact.length < 4) return sendJSON(res, 400, { error: 'Укажите контакт' });
+    await mutateStore('requests.json', (requests) => { requests.push(reqItem); return { value: null }; });
+    return sendJSON(res, 201, { ok: true, message: 'Заявка сохранена!' });
   }
 
-  // ИИ-ЧАТ С АВТОМАТИЧЕСКИМ ПЕРЕКЛЮЧЕНИЕМ МОДЕЛЕЙ ПРИ ПЕРЕГРУЗКЕ 503
+  // ИИ ЧАТ
   if (pathname === '/api/chat' && method === 'POST') {
     const body = await readBody(req);
     const message = trimmed(body.message, 4000);
-    const mode = trimmed(body.mode, 100) || 'slang';
-    if (!message) return sendJSON(res, 400, { error: 'Напишите вопрос.' });
-
     const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (!geminiKey) {
-      return sendJSON(res, 503, { error: 'GEMINI_API_KEY не найден в настройках Environment на Render.' });
-    }
+    if (!message || !geminiKey) return sendJSON(res, 400, { error: 'Ошибка ключа или запроса' });
+    const sys = 'Ты семейный ИИ-медиатор LinguaBridge. Помогай родителям и подросткам.';
+    const contents = Array.isArray(body.history) ? body.history.map(i => ({ role: i.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(i.content) }] })) : [];
+    contents.push({ role: 'user', parts: [{ text: message }] });
 
-    const systemInstruction = [
-      'Ты — живой, умный семейный ИИ-медиатор и переводчик молодёжного сленга платформы LinguaBridge Family («Мост поколений»).',
-      'Твоя задача — помогать родителям и подросткам понимать друг друга.',
-      'Если спрашивают про сленг (пивозавр, скуф, имба, кринж и т.д.): объясни смысл, обидно ли это, и дай 2-3 готовые фразы для ответа с добрым юмором.',
-      'Если вопрос о семейной психологии — дай тёплый практический совет и готовые фразы для диалога.',
-      `Текущий режим: ${mode}. Отвечай на русском языке, живо, дружелюбно и по делу.`
-    ].join('\n');
-
-    const history = Array.isArray(body.history)
-      ? body.history.slice(-8).filter((item) => item && ['user', 'assistant'].includes(item.role) && typeof item.content === 'string')
-      : [];
-
-    const contents = history.map((item) => ({
-      role: item.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: trimmed(item.content, 3000) }]
-    }));
-
-    if (!contents.length || contents[contents.length - 1].parts[0].text !== message) {
-      contents.push({ role: 'user', parts: [{ text: message }] });
-    }
-
-    // Список резервных моделей на случай перегрузки 503 одной из них
-    const modelsToTry = Array.from(new Set([
-      GEMINI_MODEL,
-      'gemini-3.8-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash'
-    ]));
-
-    let lastError = 'Сервер ИИ временно перегружен.';
-    for (const modelName of modelsToTry) {
+    const models = [GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-2.5-flash-lite'];
+    for (const m of models) {
       try {
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
-        const providerResponse = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemInstruction }] },
-            contents,
-            generationConfig: { temperature: 0.7, maxOutputTokens: 900 }
-          }),
-          signal: AbortSignal.timeout(35000)
-        });
-
-        const payload = await providerResponse.json().catch(() => ({}));
-        if (providerResponse.ok) {
-          const reply = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('\n').trim() || '';
-          if (reply) return sendJSON(res, 200, { reply, modelUsed: modelName });
-        } else {
-          lastError = `Ошибка API (${providerResponse.status}): ${payload?.error?.message || 'попробуйте ещё раз'}`;
-          // Если ошибка не 503 и не 404 — прекращаем перебор
-          if (providerResponse.status !== 503 && providerResponse.status !== 404 && providerResponse.status !== 429) break;
-        }
-      } catch (err) {
-        lastError = err.message;
-      }
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents, generationConfig: { temperature: 0.7 } }) });
+        const p = await r.json().catch(() => ({}));
+        if (r.ok && p?.candidates?.[0]?.content?.parts?.[0]?.text) return sendJSON(res, 200, { reply: p.candidates[0].content.parts[0].text.trim() });
+      } catch { continue; }
     }
+    return sendJSON(res, 502, { error: 'Сервер ИИ перегружен.' });
+  }
 
-    return sendJSON(res, 502, { error: lastError });
+  // ========== АДМИН ПАНЕЛЬ ==========
+  if (pathname === '/api/admin/data' && method === 'GET') {
+    const auth = adminAuthorized(req); if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
+    const [requests, reviews] = await Promise.all([readStore('requests.json'), readStore('reviews.json')]);
+    return sendJSON(res, 200, { requests: requests.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)), reviews: reviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+  }
+
+  const reqMatch = pathname.match(/^\/api\/admin\/requests\/([^/]+)$/);
+  if (reqMatch && method === 'PATCH') {
+    const auth = adminAuthorized(req); if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
+    const body = await readBody(req);
+    let found = false;
+    await mutateStore('requests.json', (reqs) => {
+      const item = reqs.find(r => r.id === decodeURIComponent(reqMatch[1]));
+      if (item) { item.status = body.status; found = true; }
+      return { value: null };
+    });
+    return found ? sendJSON(res, 200, { ok: true }) : sendJSON(res, 404, { error: 'Not found' });
+  }
+
+  const revMatch = pathname.match(/^\/api\/admin\/reviews\/([^/]+)$/);
+  if (revMatch && method === 'PATCH') {
+    const auth = adminAuthorized(req); if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
+    const body = await readBody(req);
+    let found = false;
+    await mutateStore('reviews.json', (revs) => {
+      const item = revs.find(r => r.id === decodeURIComponent(revMatch[1]));
+      if (item) { item.hidden = body.hidden; found = true; }
+      return { value: null };
+    });
+    return found ? sendJSON(res, 200, { ok: true }) : sendJSON(res, 404, { error: 'Not found' });
+  }
+
+  if (revMatch && method === 'DELETE') {
+    const auth = adminAuthorized(req); if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
+    let found = false;
+    await mutateStore('reviews.json', (revs) => {
+      const idx = revs.findIndex(r => r.id === decodeURIComponent(revMatch[1]));
+      if (idx >= 0) { revs.splice(idx, 1); found = true; }
+      return { value: null };
+    });
+    return found ? sendJSON(res, 200, { ok: true }) : sendJSON(res, 404, { error: 'Not found' });
   }
 
   return sendJSON(res, 404, { error: 'API-метод не найден.' });
@@ -348,32 +316,21 @@ async function handleAPI(req, res, url) {
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8'
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg'
 };
 
 async function serveStatic(req, res, url) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(res, 405, { error: 'Метод не поддерживается.' }, { Allow: 'GET, HEAD' });
   let pathname;
-  try { pathname = decodeURIComponent(url.pathname); }
-  catch { return sendJSON(res, 400, { error: 'Некорректный путь.' }); }
+  try { pathname = decodeURIComponent(url.pathname); } catch { return sendJSON(res, 400, { error: 'Bad Request' }); }
   if (pathname === '/') pathname = '/index.html';
   const target = path.resolve(PUBLIC_DIR, `.${pathname}`);
-  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + path.sep)) return sendJSON(res, 403, { error: 'Доступ запрещён.' });
+  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + path.sep)) return sendJSON(res, 403, { error: 'Forbidden' });
   try {
-    const stat = await fs.stat(target);
-    if (!stat.isFile()) return sendJSON(res, 404, { error: 'Страница не найдена.' });
     const body = await fs.readFile(target);
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream',
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-cache',
-      'Content-Length': body.length
-    });
-    return res.end(req.method === 'HEAD' ? undefined : body);
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream' });
+    res.end(body);
   } catch (error) {
-    if (error.code === 'ENOENT') return sendJSON(res, 404, { error: 'Страница не найдена.' });
-    throw error;
+    return sendJSON(res, 404, { error: 'Страница не найдена.' });
   }
 }
 
@@ -382,23 +339,14 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/')) return await handleAPI(req, res, url);
     return await serveStatic(req, res, url);
-  } catch (error) {
-    if (error.status === 413) return sendJSON(res, 413, { error: 'Запрос слишком большой.' });
-    if (error.status === 400) return sendJSON(res, 400, { error: 'Некорректный JSON в запросе.' });
-    console.error('Server error:', error.name, error.message);
-    if (!res.headersSent) return sendJSON(res, 500, { error: 'Внутренняя ошибка сервера.' });
-    res.end();
+  } catch {
+    res.writeHead(500).end();
   }
 });
 
 async function start() {
   await fs.mkdir(DATA_DIR, { recursive: true });
-  await ensureFile('users.json', []);
-  await ensureFile('reviews.json', []);
-  await ensureFile('requests.json', []);
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Lingua Bridge Family is running at http://localhost:${PORT}`);
-  });
+  await ensureFile('users.json'); await ensureFile('reviews.json'); await ensureFile('requests.json');
+  server.listen(PORT, '0.0.0.0', () => console.log(`Running on ${PORT}`));
 }
-
-start().catch((error) => { console.error('Failed to start server:', error); process.exit(1); });
+start();
