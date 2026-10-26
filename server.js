@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
 let nodemailer = null;
-try { nodemailer = require('nodemailer'); } catch { /* Website/API still works; email notification stays disabled. */ }
+try { nodemailer = require('nodemailer'); } catch { /* Optional */ }
 
 function loadEnvFile() {
   try {
@@ -18,7 +18,7 @@ function loadEnvFile() {
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
       process.env[match[1]] = value;
     });
-  } catch { /* .env is optional. Environment variables can be provided by the host. */ }
+  } catch { /* Optional */ }
 }
 loadEnvFile();
 
@@ -28,6 +28,7 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 const AUTH_SECRET = process.env.AUTH_SECRET || process.env.ADMIN_TOKEN || process.env.GEMINI_API_KEY || 'linguabridge-secret-key-2026';
+const FIREBASE_DB_URL = (process.env.FIREBASE_DB_URL || '').trim().replace(/\/+$/, '');
 
 const rateBuckets = new Map();
 const storeQueues = new Map();
@@ -94,18 +95,55 @@ async function ensureFile(filename, initialValue = []) {
   catch { await fs.writeFile(fullPath, JSON.stringify(initialValue, null, 2), { encoding: 'utf8', mode: 0o600 }); }
 }
 
+// ЧТЕНИЕ ИЗ ОБЛАЧНОЙ БАЗЫ FIREBASE (ИЛИ ЛОКАЛЬНОГО ФАЙЛА, ЕСЛИ FIREBASE НЕ ПОДКЛЮЧЁН)
 async function readStore(filename) {
+  if (FIREBASE_DB_URL) {
+    const key = filename.replace(/\.json$/i, '');
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/${encodeURIComponent(key)}.json`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (res.ok) {
+        const parsed = await res.json();
+        if (!parsed) return [];
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        if (typeof parsed === 'object') return Object.values(parsed).filter(Boolean);
+        return [];
+      }
+    } catch (err) {
+      console.error(`Firebase read error (${filename}):`, err.message);
+    }
+  }
   await ensureFile(filename, []);
   const raw = await fs.readFile(path.join(DATA_DIR, filename), 'utf8');
   const parsed = JSON.parse(raw || '[]');
   return Array.isArray(parsed) ? parsed : [];
 }
 
+// ЗАПИСЬ В ОБЛАЧНУЮ БАЗУ FIREBASE + ЛОКАЛЬНУЮ КОПИЮ
 async function writeStore(filename, data) {
+  const safeArray = Array.isArray(data) ? data : [];
+  if (FIREBASE_DB_URL) {
+    const key = filename.replace(/\.json$/i, '');
+    try {
+      const res = await fetch(`${FIREBASE_DB_URL}/${encodeURIComponent(key)}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(safeArray),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) {
+        console.error(`Firebase write HTTP error (${filename}):`, res.status);
+      }
+    } catch (err) {
+      console.error(`Firebase write failed (${filename}):`, err.message);
+    }
+  }
   await fs.mkdir(DATA_DIR, { recursive: true });
   const fullPath = path.join(DATA_DIR, filename);
   const tempPath = `${fullPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  await fs.writeFile(tempPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+  await fs.writeFile(tempPath, JSON.stringify(safeArray, null, 2), { encoding: 'utf8', mode: 0o600 });
   await fs.rename(tempPath, fullPath);
 }
 
@@ -123,7 +161,6 @@ async function mutateStore(filename, mutator) {
   finally { if (storeQueues.get(filename) === task) storeQueues.delete(filename); }
 }
 
-// ПРОВЕРКА ТОКЕНА АДМИНИСТРАТОРА (/admin.html)
 function adminAuthorized(req) {
   const expected = (process.env.ADMIN_TOKEN || '').trim();
   if (!expected) return { ok: false, status: 503, error: 'Административный доступ не настроен. Задайте ADMIN_TOKEN в Environment на Render.' };
@@ -135,7 +172,6 @@ function adminAuthorized(req) {
   return valid ? { ok: true } : { ok: false, status: 401, error: 'Неверный административный токен.' };
 }
 
-// ХЕШИРОВАНИЕ ПАРОЛЕЙ И ТОКЕНЫ ПОЛЬЗОВАТЕЛЕЙ
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
@@ -155,7 +191,7 @@ function createAuthToken(user) {
     name: user.name,
     email: user.email,
     role: user.role || 'parent',
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 30 // 30 дней
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 30
   })).toString('base64url');
   const signature = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
   return `${payload}.${signature}`;
@@ -201,16 +237,16 @@ async function handleAPI(req, res, url) {
   const pathname = url.pathname;
   const method = req.method || 'GET';
 
-  // 1. ПРОВЕРКА СТАТУСА СЕРВЕРА (нужна для admin.html и мониторинга)
   if (pathname === '/api/health' && method === 'GET') {
     return sendJSON(res, 200, {
       ok: true,
       aiConfigured: Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY),
+      cloudDatabaseConfigured: Boolean(FIREBASE_DB_URL),
       emailNotificationsConfigured: smtpReady()
     });
   }
 
-  // 2. РЕГИСТРАЦИЯ АККАУНТА
+  // РЕГИСТРАЦИЯ
   if (pathname === '/api/auth/register' && method === 'POST') {
     if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 15, message: 'Слишком много попыток регистрации. Попробуйте позже.' }, pathname)) return;
     const body = await readBody(req);
@@ -244,7 +280,7 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 201, { ok: true, token, user: result.user });
   }
 
-  // 3. ВХОД В АККАУНТ
+  // ВХОД
   if (pathname === '/api/auth/login' && method === 'POST') {
     if (!setRateLimit(req, res, { windowMs: 15 * 60 * 1000, max: 20, message: 'Слишком много попыток входа. Подождите немного.' }, pathname)) return;
     const body = await readBody(req);
@@ -262,7 +298,7 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 200, { ok: true, token, user: safeUser });
   }
 
-  // 4. ПРОВЕРКА ТЕКУЩЕЙ СЕССИИ И ВЫХОД
+  // ПРОВЕРКА СЕССИИ
   if (pathname === '/api/auth/me' && method === 'GET') {
     const tokenData = verifyAuthToken(req);
     if (!tokenData) return sendJSON(res, 401, { error: 'Не авторизован' });
@@ -278,7 +314,7 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 200, { ok: true });
   }
 
-  // 5. ОТЗЫВЫ (получение и публикация)
+  // ОТЗЫВЫ
   if (pathname === '/api/reviews' && method === 'GET') {
     const reviews = await readStore('reviews.json');
     const visible = reviews.filter((review) => !review.hidden).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -303,7 +339,7 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 201, { ok: true, review: { id: review.id, name, email, text, rating, createdAt: review.createdAt } });
   }
 
-  // 6. ЗАЯВКИ К ПСИХОЛОГАМ
+  // ЗАЯВКИ К ПСИХОЛОГАМ
   if (pathname === '/api/psych-requests' && method === 'POST') {
     if (!setRateLimit(req, res, { windowMs: 60 * 60 * 1000, max: 10, message: 'Слишком много заявок с этого подключения. Попробуйте позже.' }, pathname)) return;
     const body = await readBody(req);
@@ -329,7 +365,7 @@ async function handleAPI(req, res, url) {
     });
   }
 
-  // 7. СЕМЕЙНЫЙ ИИ-МЕДИАТОР (с резервными моделями против ошибки 503)
+  // ИИ-ЧАТ
   if (pathname === '/api/chat' && method === 'POST') {
     if (!setRateLimit(req, res, { windowMs: 10 * 60 * 1000, max: 30, message: 'Слишком много сообщений за короткое время. Попробуйте немного позже.' }, pathname)) return;
     const body = await readBody(req);
@@ -405,7 +441,7 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 502, { error: lastError });
   }
 
-  // 8. АДМИН-ПАНЕЛЬ (/admin.html) — ПОЛНАЯ ПОДДЕРЖКА ВСЕХ МЕТОДОВ
+  // АДМИН-ПАНЕЛЬ
   if (pathname === '/api/admin/data' && method === 'GET') {
     const auth = adminAuthorized(req);
     if (!auth.ok) return sendJSON(res, auth.status, { error: auth.error });
@@ -540,8 +576,8 @@ async function start() {
   await ensureFile('requests.json', []);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Lingua Bridge Family is running at http://localhost:${PORT}`);
-    if (!process.env.GEMINI_API_KEY) console.warn('GEMINI_API_KEY is not set.');
-    if (!process.env.ADMIN_TOKEN) console.warn('ADMIN_TOKEN is not set. Configure it to use /admin.html.');
+    if (FIREBASE_DB_URL) console.log('Connected to permanent Firebase Realtime Database.');
+    else console.warn('FIREBASE_DB_URL is not set. Using temporary local storage.');
   });
 }
 
