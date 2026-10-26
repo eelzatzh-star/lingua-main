@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; background-color: #090d16; color: #f8fafc; }
-    .glass { background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(16px); }
+    .glass { background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(16px); }
     .gradient-text { background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #38bdf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
@@ -33,7 +33,7 @@
     </div>
   </div>
 
-  <!-- НАВИГАЦИЯ + МГНОВЕННЫЙ ПОИСК -->
+  <!-- НАВИГАЦИЯ + ПОИСК + АККАУНТ -->
   <header class="sticky top-0 z-40 glass border-b border-slate-800/80">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
       <a href="#" class="flex items-center gap-3 group">
@@ -62,16 +62,39 @@
           <span class="absolute left-3.5 top-2.5 text-slate-400">🔍</span>
           <button id="clearGlobalSearchBtn" onclick="clearGlobalSearch()" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-white text-sm px-1">✕</button>
         </div>
-        <!-- Выпадающие подсказки поиска -->
         <div id="globalSearchDropdown" class="hidden absolute left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto"></div>
       </div>
 
-      <nav class="flex items-center gap-2 sm:gap-5 text-sm font-medium text-slate-300">
-        <a href="#dictionary" class="hover:text-white transition">Словарь (32+)</a>
-        <a href="#ai-assistant" class="hover:text-white transition flex items-center gap-1 text-indigo-300 font-semibold">✨ ИИ-Помощник</a>
-        <a href="#psychologists" class="hover:text-white transition">Психологи</a>
-        <a href="#reviews" class="hover:text-white transition">Отзывы</a>
-      </nav>
+      <div class="flex items-center gap-3 sm:gap-5">
+        <nav class="hidden md:flex items-center gap-4 text-sm font-medium text-slate-300">
+          <a href="#dictionary" class="hover:text-white transition">Словарь (32+)</a>
+          <a href="#ai-assistant" class="hover:text-white transition text-indigo-300 font-semibold">✨ ИИ-Помощник</a>
+          <a href="#psychologists" class="hover:text-white transition">Психологи</a>
+          <a href="#reviews" class="hover:text-white transition">Отзывы</a>
+        </nav>
+
+        <!-- Блок кнопок Входа / Регистрации (когда не вошёл) -->
+        <div id="authGuestBox" class="flex items-center gap-2">
+          <button onclick="openAuthModal('login')" class="text-xs sm:text-sm font-semibold text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 border border-slate-700 px-3.5 py-2 rounded-xl transition">
+            Войти
+          </button>
+          <button onclick="openAuthModal('register')" class="text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 px-3.5 py-2 rounded-xl transition shadow-md shadow-indigo-600/20">
+            Регистрация
+          </button>
+        </div>
+
+        <!-- Блок Профиля (когда вошёл в аккаунт) -->
+        <div id="authUserBox" class="hidden items-center gap-2.5 bg-slate-900 border border-slate-700/80 rounded-2xl px-3 py-1.5">
+          <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-xs" id="userAvatarLetter">U</div>
+          <div class="text-left">
+            <div id="userNameDisplay" class="text-xs font-bold text-white leading-tight">Пользователь</div>
+            <div id="userRoleDisplay" class="text-[10px] text-indigo-400">Родитель</div>
+          </div>
+          <button onclick="logoutUser()" title="Выйти из аккаунта" class="ml-1 text-xs text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-lg transition">
+            Выйти
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -86,7 +109,7 @@
           Понимайте язык своего подростка <span class="gradient-text">без конфликтов и барьеров</span>
         </h1>
         <p class="text-slate-300 text-base sm:text-lg leading-relaxed max-w-2xl">
-          Полный интерактивный словарь молодёжных терминов с переводом на язык родителей, живой семейный ИИ-медиатор, запись к профильным подростковым психологам и реальный опыт родителей.
+          Полный интерактивный словарь молодёжных терминов с переводом на язык родителей, живой семейный ИИ-медиатор, запись к профильным подростковым психологам и личный кабинет семьи.
         </p>
 
         <!-- Поиск прямо на главном экране -->
@@ -152,7 +175,6 @@
       </button>
     </div>
 
-    <!-- Фильтры и поиск по словарю -->
     <div class="grid sm:grid-cols-12 gap-3 mb-6">
       <div class="sm:col-span-6 relative">
         <input
@@ -188,7 +210,6 @@
         </p>
       </div>
 
-      <!-- Переключатель режимов -->
       <div class="flex flex-wrap justify-center gap-2 mb-5">
         <button onclick="setAiMode('slang', this)" class="ai-mode-btn bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition">
           🗣 Переводчик сленга и мемов
@@ -201,7 +222,6 @@
         </button>
       </div>
 
-      <!-- Быстрые сценарии -->
       <div class="flex flex-wrap gap-2 justify-center mb-6">
         <button onclick="sendAiMessage('Мой сын говорит «пивозавр» и «скуф». Что это значит и как отреагировать с юмором?')" class="text-xs bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 px-3 py-1.5 rounded-lg transition">
           «Сын говорит пивозавр — что это?»
@@ -214,7 +234,6 @@
         </button>
       </div>
 
-      <!-- Окно чата -->
       <div class="bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
         <div class="px-5 py-4 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
           <div class="flex items-center gap-3">
@@ -236,7 +255,7 @@
           <div class="flex items-start gap-3">
             <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white shrink-0">✨</div>
             <div class="max-w-[88%] rounded-2xl rounded-tl-sm bg-slate-900/95 border border-slate-800 px-4 py-3.5 text-sm text-slate-200 leading-relaxed">
-              Здравствуйте! Я — живой ИИ-помощник <strong>LinguaBridge Family</strong>. Напишите любое непонятное слово (например, <em>«пивозавр», «скуф», «имба», «тарелочница», «нормис»</em>) или опишите ситуацию с подростком, и я подробно разберу её!
+              Здравствуйте! Я — живой ИИ-помощник <strong>LinguaBridge Family</strong>. Напишите любое непонятное слово (например, <em>«пивозавр», «скуф», «имба», «нормис»</em>) или опишите ситуацию с подростком, и я подробно разберу её!
             </div>
           </div>
         </div>
@@ -257,7 +276,7 @@
     </div>
   </section>
 
-  <!-- 3. ПСИХОЛОГИ: ЗАПИСЬ НА КОНСУЛЬТАЦИЮ И ОНЛАЙН-ЧАТ -->
+  <!-- 3. ПСИХОЛОГИ -->
   <section id="psychologists" class="py-14 max-w-7xl mx-auto px-4 sm:px-6 w-full">
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
       <div>
@@ -266,15 +285,13 @@
         <p class="text-slate-400 text-sm mt-1">Запишитесь на онлайн-консультацию или напишите специалисту напрямую в чат прямо на сайте.</p>
       </div>
     </div>
-
     <div id="psychologistsGrid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
   </section>
 
-  <!-- 4. ОТЗЫВЫ РОДИТЕЛЕЙ (С ФОРМОЙ ДОБАВЛЕНИЯ И ГОТОВЫМИ ОТЗЫВАМИ) -->
+  <!-- 4. ОТЗЫВЫ РОДИТЕЛЕЙ -->
   <section id="reviews" class="py-14 bg-slate-900/40 border-t border-slate-800/80">
     <div class="max-w-7xl mx-auto px-4 sm:px-6">
       <div class="grid lg:grid-cols-12 gap-8 items-start">
-        <!-- Форма добавления отзыва -->
         <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl">
           <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">Обратная связь</span>
           <h3 class="text-xl font-extrabold text-white mt-1">Оставьте свой отзыв</h3>
@@ -308,7 +325,6 @@
           </form>
         </div>
 
-        <!-- Лента отзывов родителей -->
         <div class="lg:col-span-8 space-y-4">
           <div class="flex items-center justify-between">
             <div>
@@ -322,6 +338,70 @@
       </div>
     </div>
   </section>
+
+  <!-- МОДАЛЬНОЕ ОКНО РЕГИСТРАЦИИ И ВХОДА В АККАУНТ -->
+  <div id="authModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <div class="flex gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button id="tabLoginBtn" onclick="switchAuthTab('login')" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition">Вход</button>
+          <button id="tabRegisterBtn" onclick="switchAuthTab('register')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">Регистрация</button>
+        </div>
+        <button onclick="closeAuthModal()" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <!-- Форма Входа -->
+      <form id="loginForm" onsubmit="submitLogin(event)" class="space-y-3.5">
+        <div>
+          <h3 class="text-lg font-extrabold text-white">Вход в личный кабинет</h3>
+          <p class="text-xs text-slate-400">Войдите в свой аккаунт LinguaBridge Family</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Ваш E-mail</label>
+          <input id="loginEmail" type="email" required placeholder="name@mail.ru" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Пароль</label>
+          <input id="loginPassword" type="password" required placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl text-sm transition shadow-lg shadow-indigo-600/25">
+          Войти в аккаунт
+        </button>
+      </form>
+
+      <!-- Форма Регистрации -->
+      <form id="registerForm" onsubmit="submitRegister(event)" class="space-y-3.5 hidden">
+        <div>
+          <h3 class="text-lg font-extrabold text-white">Создание аккаунта</h3>
+          <p class="text-xs text-slate-400">Зарегистрируйтесь в базе платформы LinguaBridge Family</p>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Ваше имя</label>
+          <input id="regName" type="text" required placeholder="Например: Айгуль или Арман" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Ваш E-mail</label>
+          <input id="regEmail" type="email" required placeholder="name@mail.ru" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Кто вы?</label>
+          <select id="regRole" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="parent">👨‍👩‍👧 Родитель / Взрослый</option>
+            <option value="teen">🎧 Подросток / Школьник</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Придумайте пароль (не менее 6 символов)</label>
+          <input id="regPassword" type="password" minlength="6" required placeholder="Минимум 6 символов" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+        </div>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl text-sm transition shadow-lg shadow-indigo-600/25">
+          Зарегистрироваться
+        </button>
+      </form>
+
+      <div id="authStatusMsg" class="text-xs text-center hidden"></div>
+    </div>
+  </div>
 
   <!-- МОДАЛЬНОЕ ОКНО ЗАПИСИ / СООБЩЕНИЯ ПСИХОЛОГУ -->
   <div id="psychModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
@@ -448,7 +528,141 @@
     let currentCategory = 'all';
     window.currentAiMode = 'slang';
     window.aiHistory = [];
+    window.currentUser = null;
 
+    // АВТОРИЗАЦИЯ И ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
+    function openAuthModal(tab = 'login') {
+      document.getElementById('authModal').classList.remove('hidden');
+      document.getElementById('authModal').classList.add('flex');
+      document.getElementById('authStatusMsg').classList.add('hidden');
+      switchAuthTab(tab);
+    }
+
+    function closeAuthModal() {
+      document.getElementById('authModal').classList.add('hidden');
+      document.getElementById('authModal').classList.remove('flex');
+    }
+
+    function switchAuthTab(tab) {
+      const isLogin = tab === 'login';
+      document.getElementById('loginForm').classList.toggle('hidden', !isLogin);
+      document.getElementById('registerForm').classList.toggle('hidden', isLogin);
+      document.getElementById('tabLoginBtn').className = isLogin
+        ? 'px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition'
+        : 'px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+      document.getElementById('tabRegisterBtn').className = !isLogin
+        ? 'px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition'
+        : 'px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+      document.getElementById('authStatusMsg').classList.add('hidden');
+    }
+
+    function applyUserUI(user) {
+      window.currentUser = user;
+      const guestBox = document.getElementById('authGuestBox');
+      const userBox = document.getElementById('authUserBox');
+
+      if (user) {
+        guestBox.classList.add('hidden');
+        userBox.classList.remove('hidden');
+        userBox.classList.add('flex');
+        document.getElementById('userNameDisplay').textContent = user.name;
+        document.getElementById('userRoleDisplay').textContent = user.role === 'teen' ? 'Подросток' : 'Родитель';
+        document.getElementById('userAvatarLetter').textContent = (user.name || 'U')[0].toUpperCase();
+
+        // Автозаполнение форм для авторизованного пользователя
+        const revName = document.getElementById('reviewName');
+        const revEmail = document.getElementById('reviewEmail');
+        const psychName = document.getElementById('psychClientName');
+        const psychContact = document.getElementById('psychClientContact');
+        if (revName && !revName.value) revName.value = user.name;
+        if (revEmail && !revEmail.value) revEmail.value = user.email;
+        if (psychName && !psychName.value) psychName.value = user.name;
+        if (psychContact && !psychContact.value) psychContact.value = user.email;
+      } else {
+        guestBox.classList.remove('hidden');
+        userBox.classList.add('hidden');
+        userBox.classList.remove('flex');
+      }
+    }
+
+    async function checkCurrentSession() {
+      const token = localStorage.getItem('lb_auth_token');
+      if (!token) return;
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Invalid session');
+        const data = await res.json();
+        if (data.user) applyUserUI(data.user);
+      } catch {
+        localStorage.removeItem('lb_auth_token');
+        applyUserUI(null);
+      }
+    }
+
+    async function submitRegister(e) {
+      e.preventDefault();
+      const name = document.getElementById('regName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const role = document.getElementById('regRole').value;
+      const password = document.getElementById('regPassword').value;
+      const msg = document.getElementById('authStatusMsg');
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, role, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка регистрации');
+
+        localStorage.setItem('lb_auth_token', data.token);
+        applyUserUI(data.user);
+        msg.textContent = 'Аккаунт успешно создан! Добро пожаловать.';
+        msg.className = 'text-xs text-center text-emerald-400 block';
+        e.target.reset();
+        setTimeout(() => closeAuthModal(), 900);
+      } catch (err) {
+        msg.textContent = err.message;
+        msg.className = 'text-xs text-center text-rose-400 block';
+      }
+    }
+
+    async function submitLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const msg = document.getElementById('authStatusMsg');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка входа');
+
+        localStorage.setItem('lb_auth_token', data.token);
+        applyUserUI(data.user);
+        msg.textContent = 'Вы успешно вошли в аккаунт!';
+        msg.className = 'text-xs text-center text-emerald-400 block';
+        e.target.reset();
+        setTimeout(() => closeAuthModal(), 800);
+      } catch (err) {
+        msg.textContent = err.message;
+        msg.className = 'text-xs text-center text-rose-400 block';
+      }
+    }
+
+    function logoutUser() {
+      localStorage.removeItem('lb_auth_token');
+      applyUserUI(null);
+    }
+
+    // СЛОВАРЬ
     function getTerms() {
       try {
         const saved = JSON.parse(localStorage.getItem('lb_custom_terms') || '[]');
@@ -461,11 +675,9 @@
     function setDictCategory(cat) {
       currentCategory = cat;
       document.querySelectorAll('.cat-btn').forEach(btn => {
-        if (btn.dataset.cat === cat) {
-          btn.className = 'cat-btn bg-indigo-600 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition';
-        } else {
-          btn.className = 'cat-btn bg-slate-900 border border-slate-800 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition';
-        }
+        btn.className = btn.dataset.cat === cat
+          ? 'cat-btn bg-indigo-600 text-white px-3.5 py-2 rounded-xl text-xs font-semibold transition'
+          : 'cat-btn bg-slate-900 border border-slate-800 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition';
       });
       renderDictionary();
     }
@@ -523,23 +735,19 @@
                 <span class="text-[11px] font-semibold text-indigo-400">${escapeHtml(item.cat)}</span>
                 <h3 class="text-lg font-extrabold text-white mt-0.5">${escapeHtml(item.word)}</h3>
               </div>
-              <button onclick="askAiDirectly('Объясни подробнее молодёжное слово «${escapeHtml(item.word)}» и как родителю реагировать на него')" title="Разобрать с ИИ" class="text-xs bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-lg transition">
+              <button onclick="askAiDirectly('Объясни подробнее молодёжное слово «${escapeHtml(item.word)}» и как родителю реагировать на него')" class="text-xs bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded-lg transition">
                 ✨ Спросить ИИ
               </button>
             </div>
-
             <div class="bg-indigo-950/40 border border-indigo-500/25 rounded-xl p-3">
               <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-300">На языке родителей:</div>
               <div class="text-xs sm:text-sm font-medium text-white mt-0.5">${escapeHtml(item.parent)}</div>
             </div>
-
             <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(item.meaning)}</p>
-
             <div class="text-xs text-slate-400 italic bg-slate-950/70 rounded-xl p-2.5 border border-slate-800/80">
               🗣 Пример: ${escapeHtml(item.example)}
             </div>
           </div>
-
           <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-start gap-2 text-xs text-emerald-300">
             <span>💡</span>
             <span><strong>Совет родителю:</strong> ${escapeHtml(item.tip || 'Проявите дружелюбный интерес к контексту разговора.')}</span>
@@ -548,7 +756,6 @@
       `).join('');
     }
 
-    // БЫСТРЫЙ СКВОЗНОЙ ПОИСК В ШАПКЕ САЙТА
     function handleGlobalSearch(rawQuery) {
       const dropdown = document.getElementById('globalSearchDropdown');
       const clearBtn = document.getElementById('clearGlobalSearchBtn');
@@ -574,7 +781,6 @@
       ).slice(0, 2);
 
       let html = '';
-
       if (matchedTerms.length) {
         html += `<div class="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-indigo-400 bg-slate-950/60">Словарь поколений</div>`;
         html += matchedTerms.map(t => `
@@ -584,7 +790,6 @@
           </button>
         `).join('');
       }
-
       if (matchedPsych.length) {
         html += `<div class="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-slate-950/60">Психологи</div>`;
         html += matchedPsych.map(p => `
@@ -594,13 +799,11 @@
           </button>
         `).join('');
       }
-
       html += `
         <button onclick="askAiDirectly('Объясни мне значение слова или фразы: ${escapeHtml(rawQuery)}'); clearGlobalSearch();" class="w-full text-left px-4 py-3 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-200 text-xs font-semibold transition flex items-center justify-between">
           <span>🤖 Спросить у ИИ-медиатора: «${escapeHtml(rawQuery)}»</span>
           <span>→</span>
         </button>`;
-
       dropdown.innerHTML = html;
       dropdown.classList.remove('hidden');
     }
@@ -629,29 +832,20 @@
       if (!word || !parent) return;
 
       const saved = JSON.parse(localStorage.getItem('lb_custom_terms') || '[]');
-      saved.unshift({
-        word,
-        cat: 'Оценка и эмоции',
-        parent,
-        meaning,
-        example,
-        tip: 'Добавлено пользователем сообщества LinguaBridge Family.'
-      });
+      saved.unshift({ word, cat: 'Оценка и эмоции', parent, meaning, example, tip: 'Добавлено пользователем сообщества LinguaBridge Family.' });
       localStorage.setItem('lb_custom_terms', JSON.stringify(saved));
       e.target.reset();
       toggleAddTermModal(false);
       renderDictionary();
     }
 
-    // РАБОТА НАСТОЯЩЕГО ИИ-МЕДИАТОРА ЧЕРЕЗ /api/chat НА СЕРВЕРЕ
+    // ИИ-МЕДИАТОР
     function setAiMode(mode, btnEl) {
       window.currentAiMode = mode;
       document.querySelectorAll('.ai-mode-btn').forEach(b => {
         b.className = 'ai-mode-btn bg-slate-900 border border-slate-800 text-slate-300 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition';
       });
-      if (btnEl) {
-        btnEl.className = 'ai-mode-btn bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition';
-      }
+      if (btnEl) btnEl.className = 'ai-mode-btn bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition';
       const labels = {
         slang: 'Режим: Переводчик молодёжного сленга и советник',
         parent: 'Режим: Психологический помощник для родителей',
@@ -705,10 +899,7 @@
           })
         });
         const data = await response.json();
-
-        if (!response.ok || data.error) {
-          throw new Error(data.error || 'Ошибка ответа сервера');
-        }
+        if (!response.ok || data.error) throw new Error(data.error || 'Ошибка ответа сервера');
 
         window.aiHistory.push({ role: 'user', content: text });
         window.aiHistory.push({ role: 'assistant', content: data.reply });
@@ -743,7 +934,7 @@
         </div>`;
     }
 
-    // РАЗДЕЛ ПСИХОЛОГОВ
+    // ПСИХОЛОГИ
     function renderPsychologists() {
       const grid = document.getElementById('psychologistsGrid');
       grid.innerHTML = PSYCHOLOGISTS.map(p => `
@@ -807,15 +998,15 @@
         statusEl.textContent = data.message || 'Заявка успешно отправлена!';
         statusEl.className = 'text-xs text-center text-emerald-400 block mt-2';
         e.target.reset();
-        setTimeout(() => closePsychModal(), 1800);
+        setTimeout(() => closePsychModal(), 1500);
       } catch {
-        statusEl.textContent = 'Заявка сохранена! Специалист свяжется с вами.';
+        statusEl.textContent = 'Заявка сохранена!';
         statusEl.className = 'text-xs text-center text-emerald-400 block mt-2';
-        setTimeout(() => closePsychModal(), 1800);
+        setTimeout(() => closePsychModal(), 1500);
       }
     }
 
-    // ОТЗЫВЫ РОДИТЕЛЕЙ (СЕРВЕР + ПРЕДЗАПОЛНЕННЫЕ ОТЗЫВЫ С ПОЧТАМИ)
+    // ОТЗЫВЫ РОДИТЕЛЕЙ
     async function loadReviews() {
       let serverReviews = [];
       try {
@@ -826,12 +1017,7 @@
         }
       } catch { /* fallback */ }
 
-      const localEmails = JSON.parse(localStorage.getItem('lb_review_emails') || '{}');
-      const combined = [
-        ...serverReviews.map(r => ({ ...r, email: localEmails[r.name] || 'parent.verified@mail.ru' })),
-        ...INITIAL_REVIEWS
-      ];
-
+      const combined = [...serverReviews, ...INITIAL_REVIEWS];
       document.getElementById('reviewsTotalBadge').textContent = `${combined.length} отзывов`;
       const list = document.getElementById('reviewsList');
       list.innerHTML = combined.map(r => `
@@ -861,26 +1047,22 @@
       const text = document.getElementById('reviewText').value.trim();
       const msg = document.getElementById('reviewStatusMsg');
 
-      const localEmails = JSON.parse(localStorage.getItem('lb_review_emails') || '{}');
-      localEmails[name] = email;
-      localStorage.setItem('lb_review_emails', JSON.stringify(localEmails));
-
       try {
         const res = await fetch('/api/reviews', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, rating, text })
+          body: JSON.stringify({ name, email, rating, text })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка отправки');
 
-        msg.textContent = 'Спасибо! Ваш отзыв опубликован на сайте.';
+        msg.textContent = 'Спасибо! Ваш отзыв сохранён в базе и опубликован.';
         msg.className = 'text-xs text-center text-emerald-400 block';
         e.target.reset();
         await loadReviews();
-      } catch (err) {
+      } catch {
         INITIAL_REVIEWS.unshift({ id: String(Date.now()), name, email, rating, text, createdAt: new Date().toISOString() });
-        msg.textContent = 'Спасибо! Ваш отзыв добавлен.';
+        msg.textContent = 'Спасибо! Ваш отзыв опубликован.';
         msg.className = 'text-xs text-center text-emerald-400 block';
         e.target.reset();
         await loadReviews();
@@ -898,6 +1080,7 @@
     renderDictionary();
     renderPsychologists();
     loadReviews();
+    checkCurrentSession();
   </script>
 </body>
 </html>
